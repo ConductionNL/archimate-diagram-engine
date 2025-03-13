@@ -1,4 +1,5 @@
 # This repo is forked from https://github.com/Arktect-Co/archimate-diagram-engine
+# We are using this fork to add support that we need to use the package.
 # archimate-diagram-engine
 
 Archimate 3.x diagram renderer using JoinJS.
