@@ -1,6 +1,6 @@
 {
-  "name": "@arktect-co/archimate-diagram-engine",
-  "version": "1.0.1",
+  "name": "@conduction/archimate-diagram-engine",
+  "version": "1.0.2",
   "description": "Archimate 3.x diagram renderer",
   "author": "diorbert.pereira",
   "main": "dist/lib/index.js",
@@ -9,7 +9,7 @@
     "dist/**/*",
     "@types/**/*"
   ],
-  "repository": "github:Arktect-Co/archimate-diagram-engine",
+  "repository": "github:ConductionNL/archimate-diagram-engine",
   "engines": {
     "node": ">= 12"
   },
