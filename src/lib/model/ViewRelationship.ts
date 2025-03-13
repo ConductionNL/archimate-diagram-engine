@@ -11,7 +11,7 @@ export interface LabelMarkup {
   namespaceURI?: string;
   className?: string;
   attributes?: attributes.NativeSVGAttributes;
-  style?: { [key: string]: any };
+  style?: { [key: string]: unknown };
   children?: dia.MarkupJSON;
   textContent?: string;
 }
