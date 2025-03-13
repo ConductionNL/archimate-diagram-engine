@@ -1,4 +1,4 @@
-import { shapes, dia } from 'jointjs';
+import { shapes, dia, attributes } from 'jointjs';
 import { RelationshipAttributesBuilder } from '@lib/viewRenderer/relationshipRendering/RelationshipAttributesBuilder';
 import { EdgePointerBuilder } from '@lib/viewRenderer/relationshipRendering/EdgePointerBuilder';
 import { ViewSetting } from '@lib/model/ViewSetting';
