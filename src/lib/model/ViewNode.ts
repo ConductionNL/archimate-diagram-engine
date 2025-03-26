@@ -9,4 +9,5 @@ export interface ViewNode {
   width?: number;
   height?: number;
   parent?: string | null;
+  onClick?: () => void;
 }
