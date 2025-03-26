@@ -3,6 +3,12 @@
   "version": "1.0.2",
   "description": "Archimate 3.x diagram renderer",
   "author": "diorbert.pereira",
+  "contributors": [
+    {
+      "name": "Remko Huisman",
+      "email": "remko@conduction.nl"
+    }
+  ],
   "main": "dist/lib/index.js",
   "types": "dist/@types/index.d.ts",
   "files": [
