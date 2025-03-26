@@ -175,15 +175,15 @@ export class RelationshipBuilder {
       link.appendLabel({
         attrs: {
           text: {
-            text: label.text || '',
+            text: label?.text || '',
           },
         },
-        ...(label.markup && { markup: [{
+        ...(label?.markup && { markup: [{
           tagName: 'text',
           ...label.markup[0],
         }], }),
-        ...(label.position && { position: label.position }),
-        ...(label.size && { size: label.size }),
+        ...(label?.position && { position: label.position }),
+        ...(label?.size && { size: label.size }),
       });
 
       link.source(sourceNode, {

@@ -81,6 +81,7 @@ export const ViewRenderer = {
           posX: node.x,
           posY: node.y,
           parentElement: parent,
+          onClick: node.onClick,
         });
       });
 
