@@ -207,42 +207,12 @@ export class NodeBuilder {
         parent: parentElement,
       });
 
-      // Make the shape interactive and add click handler
-      if (onClick) {
-        shape.attr({
-          body: {
-            cursor: 'pointer',
-            pointerEvents: 'all',
-          },
-          label: {
-            pointerEvents: 'none'
-          }
-        });
-
-        // Store onClick as a property
-        shape.prop('onClick', onClick);
-
-        // Add event listener when shape is added to graph
-        shape.once('add', () => {
-          const paper = (this.graph as any).paper;
-          if (paper) {
-            paper.on('element:pointerclick', (elementView: dia.ElementView, evt: Event) => {
-              if ((elementView as any).model.id === shape.id) {
-                evt.stopPropagation();
-                onClick();
-              }
-            });
-          }
-        });
-      }
-
       shape.position(x, y);
       shape.addTo(this.graph);
 
       // Nesting the element with parent
       if (parentElement !== null && parentElement !== undefined) {
         parentElement.embed(shape);
-
         shape.position(x, y, { parentRelative: true });
       }
 
@@ -250,17 +220,36 @@ export class NodeBuilder {
       const svgData = generateGlyph(type, this.archimateVersion);
 
       if (svgData !== '') {
-        const image = new shapes.standard.Image();
+        const image = new shapes.standard.Image() as dia.Element;
 
         image.resize(16, 16);
         image.attr({
           image: {
             'xlink:href': `data:image/svg+xml;utf8,${encodeURIComponent(svgData)}`,
-          },
+            cursor: onClick ? 'pointer' : 'default',
+            pointerEvents: onClick ? 'all' : 'none'
+          }
         });
 
         image.addTo(this.graph);
         shape.embed(image);
+
+        // Only add click handler if onClick exists
+        if (onClick) {
+          // Store onClick as a property on the image
+          image.prop('onClick', onClick);
+
+          const paper = (this.graph as any).paper;
+          if (paper) {
+            paper.on('element:pointerclick', (elementView: dia.ElementView, evt: Event) => {
+              const clickedElement = (elementView as any).model;
+              if (clickedElement.id === image.id && clickedElement.prop('onClick')) {
+                evt.stopPropagation();
+                clickedElement.prop('onClick')();
+              }
+            });
+          }
+        }
 
         image.position(width - 24, 8, { parentRelative: true });
       }

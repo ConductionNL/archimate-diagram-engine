@@ -1,6 +1,6 @@
 {
   "name": "@conduction/archimate-diagram-engine",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Archimate 3.x diagram renderer",
   "author": "diorbert.pereira",
   "contributors": [
