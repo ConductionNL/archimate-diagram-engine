@@ -63,7 +63,8 @@ export const ViewRenderer = {
     graph.clear();
 
     if (Array.isArray(nodes)) {
-      nodes.forEach(node => {
+      // Process nodes in their original order
+      for (const node of nodes) {
         const parentId = node.parent;
         let parent = null;
 
@@ -83,8 +84,9 @@ export const ViewRenderer = {
           parentElement: parent,
           onClick: node.onClick,
         });
-      });
+      }
 
+      // Process relationships after all nodes
       let source = null,
         target = null,
         parent = null;
@@ -94,12 +96,10 @@ export const ViewRenderer = {
         target = graph.getCell(rel.targetId);
         parent = target.attributes.parent;
 
-        // Must add relationship only if all parties are defined and are nodes
         if (
           source?.attributes.type !== 'standard.Link' &&
           target?.attributes.type !== 'standard.Link'
         ) {
-          // Relationships with embedded nodes should not be visible
           if (parent === null || parent !== source.id) {
             relationshipBuilder.buildRelationship({
               type: rel.type,
