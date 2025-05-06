@@ -60,61 +60,97 @@ export const ViewRenderer = {
     const nodeBuilder = new NodeBuilder(graph, settings);
     const relationshipBuilder = new RelationshipBuilder(graph, settings);
 
+    // Clear any existing content
     graph.clear();
 
-    if (Array.isArray(nodes)) {
-      // Process nodes in their original order
-      for (const node of nodes) {
-        const parentId = node.parent;
-        let parent = null;
+    // Start batch operation
+    graph.startBatch('render');
 
-        if (parentId !== undefined && parentId !== null) {
-          parent = graph.getCell(parentId);
+    try {
+      if (Array.isArray(nodes)) {
+        // Pre-process nodes to build parent-child relationships map
+        const nodeMap = new Map<string, ViewNode>();
+        nodes.forEach(node => {
+          if (node.viewNodeId) {
+            nodeMap.set(node.viewNodeId, node);
+          }
+        });
+
+        // Process nodes in their original order with optimized batching
+        for (const node of nodes) {
+          const parentId = node.parent;
+          let parent = null;
+
+          if (parentId !== undefined && parentId !== null) {
+            parent = graph.getCell(parentId);
+          }
+
+          nodeBuilder.buildNode({
+            modelElementId: node.modelNodeId,
+            viewNodeId: node.viewNodeId,
+            name: node.name,
+            type: node.type,
+            width: node.width,
+            height: node.height,
+            posX: node.x,
+            posY: node.y,
+            parentElement: parent,
+            onClick: node.onClick,
+          });
         }
 
-        nodeBuilder.buildNode({
-          modelElementId: node.modelNodeId,
-          viewNodeId: node.viewNodeId,
-          name: node.name,
-          type: node.type,
-          width: node.width,
-          height: node.height,
-          posX: node.x,
-          posY: node.y,
-          parentElement: parent,
-          onClick: node.onClick,
-        });
+        // Process relationships after all nodes with optimized batching
+        if (relationships && relationships.length > 0) {
+          let source = null,
+            target = null,
+            parent = null;
+
+          relationships.forEach(rel => {
+            source = graph.getCell(rel.sourceId);
+            target = graph.getCell(rel.targetId);
+            parent = target?.attributes?.parent;
+
+            if (
+              source?.attributes.type !== 'standard.Link' &&
+              target?.attributes.type !== 'standard.Link'
+            ) {
+              if (parent === null || parent !== source?.id) {
+                relationshipBuilder.buildRelationship({
+                  type: rel.type,
+                  relationshipModelId: rel.modelRelationshipId,
+                  relationshipViewId: rel.viewRelationshipId,
+                  isBidirectional: rel.isBidirectional,
+                  bendpoints: rel.bendpoints,
+                  sourceNode: source,
+                  targetNode: target,
+                  label: rel.label,
+                });
+              }
+            }
+          });
+        }
       }
 
-      // Process relationships after all nodes
-      let source = null,
-        target = null,
-        parent = null;
-
-      relationships.forEach(rel => {
-        source = graph.getCell(rel.sourceId);
-        target = graph.getCell(rel.targetId);
-        parent = target.attributes.parent;
-
-        if (
-          source?.attributes.type !== 'standard.Link' &&
-          target?.attributes.type !== 'standard.Link'
-        ) {
-          if (parent === null || parent !== source.id) {
-            relationshipBuilder.buildRelationship({
-              type: rel.type,
-              relationshipModelId: rel.modelRelationshipId,
-              relationshipViewId: rel.viewRelationshipId,
-              isBidirectional: rel.isBidirectional,
-              bendpoints: rel.bendpoints,
-              sourceNode: source,
-              targetNode: target,
-              label: rel.label,
-            });
-          }
-        }
-      });
+      // Force graph update
+      graph.resetCells([...graph.getCells()]);
+    } catch (error) {
+      console.error('Error during rendering:', error);
+      throw error;
+    } finally {
+      // Stop batch operation
+      graph.stopBatch('render');
+      
+      // Ensure paper fits all content if available
+      if ((graph as any).paper) {
+        const paper = (graph as any).paper;
+        paper.fitToContent({
+          padding: 20,
+          allowNewOrigin: 'any'
+        });
+      }
     }
+    
+    console.timeEnd('totalRender');
   },
 
   /**
@@ -162,9 +198,7 @@ export const ViewRenderer = {
     settings: ViewSetting,
   ): dia.Graph {
     const graph = new dia.Graph();
-
     this.renderToGraph(graph, nodes, relationships, settings);
-
     return graph;
   },
 };

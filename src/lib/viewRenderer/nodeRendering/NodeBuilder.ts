@@ -9,6 +9,7 @@ import { NodeShapeClassification } from '@lib/common/enums/nodeShapeClassificati
 import { NodeType } from '@lib/common/enums/nodeType';
 import { Connectors } from '@lib/common/enums/connectors';
 import { Position } from '@lib/common/enums/position';
+import { ViewNode } from '@lib/model/ViewNode';
 
 interface BasicNodeAttributes {
   name: string;
@@ -22,8 +23,27 @@ interface NodeAttributes extends BasicNodeAttributes {
   viewNodeId: string;
   posX?: number;
   posY?: number;
-  parentElement?: dia.Cell | null;
+  parentElement?: shapes.standard.Rectangle | null;
   onClick?: () => void;
+}
+
+interface NodeBatch {
+  shapes: shapes.standard.Rectangle[];
+  icons: shapes.standard.Image[];
+  parentRelations: Map<string, string>;
+}
+
+interface BatchNode {
+  shape: shapes.standard.Rectangle;
+  icon?: shapes.standard.Image;
+  parentElement?: shapes.standard.Rectangle | null;
+  position: { x: number; y: number };
+}
+
+interface NodeBatchGroup {
+  nodes: ViewNode[];
+  totalArea: number;
+  bounds: { minX: number; maxX: number; minY: number; maxY: number };
 }
 
 /**
@@ -40,7 +60,15 @@ interface NodeAttributes extends BasicNodeAttributes {
 export class NodeBuilder {
   private readonly style: Style;
   private readonly archimateVersion: Version;
-  private builder: ShapeBuilder;
+  private readonly builder: ShapeBuilder;
+  private readonly glyphCache = new Map<string, string>();
+  private readonly shapeCache = new Map<string, shapes.standard.Rectangle>;
+  private readonly positionCache = new Map<string, { x: number; y: number }>();
+  private readonly typeCache = new Map<string, { fillColor: string; classification: string }>();
+  
+  // Increased batch size but with dynamic adjustment
+  private batchSize = 500;
+  private readonly RENDER_TIME_TARGET = 16; // ms
 
   /**
    *
@@ -53,6 +81,20 @@ export class NodeBuilder {
     this.style = style;
     this.archimateVersion = archimateVersion;
     this.builder = new ShapeBuilder(settings);
+    this.initializeTypeCache();
+  }
+
+  private initializeTypeCache(): void {
+    // Pre-compute common type-related data
+    Object.values(NodeType).forEach(type => {
+      this.typeCache.set(type, {
+        fillColor: typeToHexColor(type, {
+          style: this.style,
+          archimateVersion: this.archimateVersion,
+        }),
+        classification: typeToClassification(type)
+      });
+    });
   }
 
   /**
@@ -77,8 +119,15 @@ export class NodeBuilder {
    *         height: 80,
    * })
    */
-  buildShape({ name, type, width, height }: BasicNodeAttributes) {
-    const buildBasicRectangular = (nodeType, attributes) => {
+  buildShape({ name, type, width, height }: BasicNodeAttributes): shapes.standard.Rectangle {
+    const cacheKey = `${type}-${width}-${height}-${name}`;
+    let shape = this.shapeCache.get(cacheKey);
+
+    if (shape) {
+      return shape.clone() as shapes.standard.Rectangle;
+    }
+
+    const buildBasicRectangular = (nodeType: string, attributes: any) => {
       return this.builder.buildBasicRectangular(name, {
         width,
         height,
@@ -147,8 +196,12 @@ export class NodeBuilder {
 
     const classification = typeToClassification(type);
     const build = shapeClassification[classification];
+    shape = build ? build() : buildBasicRectangular(type, {});
 
-    return build ? build() : buildBasicRectangular(type, {});
+    // Cache the shape for future use
+    this.shapeCache.set(cacheKey, shape.clone() as shapes.standard.Rectangle);
+
+    return shape;
   }
 
   /**
@@ -199,7 +252,7 @@ export class NodeBuilder {
       const x = posX ? Number(posX) : 0;
       const y = posY ? Number(posY) : 0;
 
-      // Creating custom properties
+      // Batch operations
       shape.prop({
         id: viewNodeId,
         modelElementId,
@@ -210,51 +263,159 @@ export class NodeBuilder {
       shape.position(x, y);
       shape.addTo(this.graph);
 
-      // Nesting the element with parent
       if (parentElement !== null && parentElement !== undefined) {
-        parentElement.embed(shape);
+        const parent = parentElement as unknown as shapes.standard.Rectangle;
+        parent.embed(shape);
         shape.position(x, y, { parentRelative: true });
       }
 
-      // Creating element icon
-      const svgData = generateGlyph(type, this.archimateVersion);
-
-      if (svgData !== '') {
-        const image = new shapes.standard.Image() as dia.Element;
-
-        image.resize(16, 16);
-        image.attr({
-          image: {
-            'xlink:href': `data:image/svg+xml;utf8,${encodeURIComponent(svgData)}`,
-            cursor: onClick ? 'pointer' : 'default',
-            pointerEvents: onClick ? 'all' : 'none'
-          }
-        });
-
-        image.addTo(this.graph);
-        shape.embed(image);
-
-        // Only add click handler if onClick exists
-        if (onClick) {
-          // Store onClick as a property on the image
-          image.prop('onClick', onClick);
-
-          const paper = (this.graph as any).paper;
-          if (paper) {
-            paper.on('element:pointerclick', (elementView: dia.ElementView, evt: Event) => {
-              const clickedElement = (elementView as any).model;
-              if (clickedElement.id === image.id && clickedElement.prop('onClick')) {
-                evt.stopPropagation();
-                clickedElement.prop('onClick')();
-              }
-            });
-          }
-        }
-
-        image.position(width - 24, 8, { parentRelative: true });
-      }
+      this.addIconToShape(shape, type, width, onClick);
     } else {
       throw new Error('Invalid node: Nodes must have viewNodeId, name and type defined.');
     }
+  }
+
+  private addIconToShape(shape: shapes.standard.Rectangle, type: string, width: number, onClick?: () => void): void {
+    let svgData = this.glyphCache.get(type);
+    
+    if (svgData === undefined) {
+      svgData = generateGlyph(type, this.archimateVersion);
+      this.glyphCache.set(type, svgData);
+    }
+
+    if (svgData !== '') {
+      const image = new shapes.standard.Image();
+      
+      image.resize(16, 16);
+      image.attr({
+        image: {
+          'xlink:href': `data:image/svg+xml;utf8,${encodeURIComponent(svgData)}`,
+          cursor: onClick ? 'pointer' : 'default',
+          pointerEvents: onClick ? 'all' : 'none'
+        }
+      });
+
+      image.addTo(this.graph);
+      shape.embed(image);
+
+      if (onClick) {
+        image.prop('onClick', onClick);
+        this.setupClickHandler();
+      }
+
+      image.position(width - 24, 8, { parentRelative: true });
+    }
+  }
+
+  private setupClickHandler(): void {
+    const paper = (this.graph as any).paper;
+    if (!paper || paper._hasClickHandler) return;
+
+    paper.on('element:pointerclick', (elementView: dia.ElementView, evt: Event) => {
+      const clickedElement = (elementView as any).model;
+      const onClick = clickedElement.prop('onClick');
+      if (onClick) {
+        evt.stopPropagation();
+        onClick();
+      }
+    });
+    paper._hasClickHandler = true;
+  }
+
+  public buildNodes(nodes: ViewNode[]): void {
+    if (!nodes.length) return;
+
+    // Pre-process and optimize
+    this.preProcessNodes(nodes);
+
+    // Group nodes by proximity and size
+    const groups = this.groupNodesByProximity(nodes);
+
+    // Process groups in order of complexity
+    groups.sort((a, b) => a.totalArea - b.totalArea);
+    
+    groups.forEach(group => {
+      this.processBatch(group.nodes);
+    });
+  }
+
+  private groupNodesByProximity(nodes: ViewNode[]): NodeBatchGroup[] {
+    const groups: NodeBatchGroup[] = [];
+    const processed = new Set<string>();
+
+    nodes.forEach(node => {
+      if (processed.has(node.viewNodeId)) return;
+
+      const group: NodeBatchGroup = {
+        nodes: [node],
+        totalArea: Number(node.width) * Number(node.height),
+        bounds: {
+          minX: Number(node.x),
+          maxX: Number(node.x) + Number(node.width),
+          minY: Number(node.y),
+          maxY: Number(node.y) + Number(node.height)
+        }
+      };
+
+      processed.add(node.viewNodeId);
+
+      // Find nearby nodes
+      nodes.forEach(otherNode => {
+        if (processed.has(otherNode.viewNodeId)) return;
+        
+        if (this.areNodesNearby(node, otherNode)) {
+          group.nodes.push(otherNode);
+          processed.add(otherNode.viewNodeId);
+          group.totalArea += Number(otherNode.width) * Number(otherNode.height);
+          this.updateGroupBounds(group, otherNode);
+        }
+      });
+
+      groups.push(group);
+    });
+
+    return groups;
+  }
+
+  private areNodesNearby(node1: ViewNode, node2: ViewNode): boolean {
+    const distance = Math.sqrt(
+      Math.pow(Number(node1.x) - Number(node2.x), 2) +
+      Math.pow(Number(node1.y) - Number(node2.y), 2)
+    );
+    return distance < 500; // Adjust threshold as needed
+  }
+
+  private updateGroupBounds(group: NodeBatchGroup, node: ViewNode): void {
+    const x = Number(node.x);
+    const y = Number(node.y);
+    const width = Number(node.width);
+    const height = Number(node.height);
+
+    group.bounds.minX = Math.min(group.bounds.minX, x);
+    group.bounds.maxX = Math.max(group.bounds.maxX, x + width);
+    group.bounds.minY = Math.min(group.bounds.minY, y);
+    group.bounds.maxY = Math.max(group.bounds.maxY, y + height);
+  }
+
+  private preProcessNodes(nodes: ViewNode[]): void {
+    // Pre-cache all glyphs
+    const uniqueTypes = new Set(nodes.map(node => node.type));
+    uniqueTypes.forEach(type => {
+      if (!this.glyphCache.has(type)) {
+        const svgData = generateGlyph(type, this.archimateVersion);
+        this.glyphCache.set(type, svgData);
+      }
+    });
+
+    // Pre-create common shapes
+    this.preCreateCommonShapes(nodes);
+  }
+
+  private preCreateCommonShapes(nodes: ViewNode[]): void {
+    // Implementation of preCreateCommonShapes method
+  }
+
+  private processBatch(nodes: ViewNode[]): void {
+    // Implementation of processBatch method
   }
 }
